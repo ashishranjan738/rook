@@ -174,7 +174,7 @@ func (o MCTestOperations) Setup() {
 
 	// start the two clusters in parallel
 	logger.Infof("starting two clusters in parallel")
-	err = o.startCluster(o.namespace1, "bluestore", o.testOverPVC, false)
+	err = o.startCluster(o.namespace1, "bluestore", o.testOverPVC, true)
 	require.NoError(o.T(), err)
 	err = o.startCluster(o.namespace2, "filestore", false, false)
 	require.NoError(o.T(), err)
