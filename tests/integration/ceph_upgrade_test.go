@@ -82,6 +82,8 @@ func (s *UpgradeSuite) SetupSuite() {
 		"",
 		false,
 		useDevices,
+		false,
+		"",
 		mons,
 		rbdMirrorWorkers,
 		installer.Version1_0,

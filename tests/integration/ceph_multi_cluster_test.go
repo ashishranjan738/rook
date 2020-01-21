@@ -129,12 +129,14 @@ func (mrc *MultiClusterDeploySuite) TestObjectStoreOnMultiRookCluster() {
 
 // MCTestOperations struct for handling panic and test suite tear down
 type MCTestOperations struct {
-	installer       *installer.CephInstaller
-	kh              *utils.K8sHelper
-	T               func() *testing.T
-	namespace1      string
-	namespace2      string
-	systemNamespace string
+	installer        *installer.CephInstaller
+	kh               *utils.K8sHelper
+	T                func() *testing.T
+	namespace1       string
+	namespace2       string
+	systemNamespace  string
+	storageClassName string
+	testOverPVC      bool
 }
 
 // NewMCTestOperations creates new instance of TestCluster struct
@@ -146,7 +148,12 @@ func NewMCTestOperations(t func() *testing.T, namespace1 string, namespace2 stri
 
 	i := installer.NewCephInstaller(t, kh.Clientset, false, installer.VersionMaster, installer.NautilusVersion)
 
-	op := &MCTestOperations{i, kh, t, namespace1, namespace2, installer.SystemNamespace(namespace1)}
+	op := &MCTestOperations{i, kh, t, namespace1, namespace2, installer.SystemNamespace(namespace1), "", false}
+	p := kh.IsStorageClassPresent("manual")
+	if p == nil && kh.VersionAtLeast("v1.13.0") {
+		op.testOverPVC = true
+		op.storageClassName = "manual"
+	}
 	op.Setup()
 	return op, kh
 }
@@ -167,9 +174,9 @@ func (o MCTestOperations) Setup() {
 
 	// start the two clusters in parallel
 	logger.Infof("starting two clusters in parallel")
-	err = o.startCluster(o.namespace1, "bluestore")
+	err = o.startCluster(o.namespace1, "bluestore", o.testOverPVC, false)
 	require.NoError(o.T(), err)
-	err = o.startCluster(o.namespace2, "filestore")
+	err = o.startCluster(o.namespace2, "filestore", false, false)
 	require.NoError(o.T(), err)
 
 	require.True(o.T(), o.kh.IsPodInExpectedState("rook-ceph-agent", o.systemNamespace, "Running"),
@@ -190,13 +197,13 @@ func (o MCTestOperations) Teardown() {
 	o.installer.UninstallRookFromMultipleNS(true, installer.SystemNamespace(o.namespace1), o.namespace1, o.namespace2)
 }
 
-func (o MCTestOperations) startCluster(namespace, store string) error {
+func (o MCTestOperations) startCluster(namespace, store string, testOverPVC, wipeClusterDisks bool) error {
 	logger.Infof("starting cluster %s", namespace)
 	useDevices := false
 	// do not use disks for this cluster, otherwise the 2 test clusters will each try to use the
 	// same disks.
-	err := o.installer.CreateK8sRookClusterWithHostPathAndDevices(namespace, o.systemNamespace, store,
-		useDevices, cephv1.MonSpec{Count: 3, AllowMultiplePerNode: true}, true, 1, installer.NautilusVersion)
+	err := o.installer.CreateK8sRookClusterWithHostPathAndDevicesOrPVC(namespace, o.systemNamespace, store,
+		useDevices, testOverPVC, o.storageClassName, cephv1.MonSpec{Count: 3, AllowMultiplePerNode: true}, true, wipeClusterDisks, 1, installer.NautilusVersion)
 	if err != nil {
 		o.T().Fail()
 		o.installer.GatherAllRookLogs(o.T().Name(), namespace, o.systemNamespace)

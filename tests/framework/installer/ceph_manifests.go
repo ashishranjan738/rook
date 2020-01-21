@@ -51,6 +51,8 @@ type ClusterSettings struct {
 	StoreType        string
 	DataDirHostPath  string
 	UseAllDevices    bool
+	UsePVCs          bool
+	UseStorageClass  string
 	Mons             int
 	RBDMirrorWorkers int
 	CephVersion      cephv1.CephVersionSpec
@@ -1708,6 +1710,59 @@ func (m *CephManifestsMaster) GetRookCluster(settings *ClusterSettings) string {
 	store := "# storeType not specified; Rook will use default store types"
 	if settings.StoreType != "" {
 		store = `storeType: "` + settings.StoreType + `"`
+	}
+	if settings.UsePVCs {
+		return `apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: ` + settings.Namespace + `
+  namespace: ` + settings.Namespace + `
+spec:
+  dataDirHostPath: ` + settings.DataDirHostPath + `
+  mon:
+    count: ` + strconv.Itoa(settings.Mons) + `
+    allowMultiplePerNode: true
+    volumeClaimTemplate:
+      spec:
+        storageClassName: ` + settings.UseStorageClass + `
+        resources:
+          requests:
+            storage: 5Gi
+  cephVersion:
+    image: ` + settings.CephVersion.Image + `
+    allowUnsupported: ` + strconv.FormatBool(settings.CephVersion.AllowUnsupported) + `
+  skipUpgradeChecks: false
+  continueUpgradeAfterChecksEvenIfNotHealthy: false
+  dashboard:
+    enabled: true
+  rbdMirroring:
+    workers: ` + strconv.Itoa(settings.RBDMirrorWorkers) + `
+  network:
+    hostNetwork: false
+  crashCollector:
+    disable: false
+  storage:
+    storageClassDeviceSets:
+    - name: set1
+      count: 1
+      portable: false
+      tuneSlowDeviceClass: true
+      volumeClaimTemplates:
+      - metadata:
+          name: data
+        spec:
+          resources:
+            requests:
+              storage: 50Gi
+          storageClassName: ` + settings.UseStorageClass + `
+          volumeMode: Block
+          accessModes:
+            - ReadWriteOnce
+  disruptionManagement:
+    managePodBudgets: false
+    osdMaintenanceTimeout: 30
+    manageMachineDisruptionBudgets: false
+    machineDisruptionBudgetNamespace: openshift-machine-api`
 	}
 
 	return `apiVersion: ceph.rook.io/v1
